@@ -85,17 +85,13 @@ def stylize(content_img, init_img = None):
 
         content_loss = 0.0
         for lname in content_layers:
-            content_loss += 0.4 * tf.nn.l2_loss(model[lname] - content_features[lname])
+            content_loss += 0.1 * tf.nn.l2_loss(model[lname] - content_features[lname])
             content_loss /= np.float32(len(content_layers))
 
 
-        #style_diff_loss = 0.0
-        #for lname in style_layers:
-        #    style_diff_loss += 0.10 * tf.nn.l2_loss(model[lname] - style_original_features[lname])
-        #    style_diff_loss /= np.float32(len(style_layers))
-
 
         style_loss = 0.0
+        """
         for style_img in style_images:
             style_features = style_features_images[style_img]
             for lname in style_layers:
@@ -106,12 +102,33 @@ def stylize(content_img, init_img = None):
                 gram = tf.matmul(tf.transpose(feats), feats) / size
                 style_loss += 3.0 * tf.reduce_mean(tf.abs(gram - style_features[lname])) / style_features[lname].size
                 style_loss /= np.float32(len(style_layers))
-
         """
+
+
+        for lname in style_layers:
+            layer = model[lname]
+            _, height, width, number = map(lambda i: i.value, layer.get_shape())
+            size = height * width * number
+            feats = tf.reshape(layer, (-1, number))
+            gram = tf.matmul(tf.transpose(feats), feats) / size
+            
+            sf_feats = None
+            for style_img in style_images:
+                if sf_feats == None:
+                    sf_feats = style_features_images[style_img][lname]
+                else:
+                    sf_feats += style_features_images[style_img][lname] 
+            sf_feats /= np.float32(len(style_images))
+            style_loss = 3.0 * tf.reduce_mean(tf.abs(gram - sf_feats))
+        style_loss /= np.float32(len(style_layers))
+
+        
+        """ category loss """
         enc_loss = 0.0
         ids = np.zeros([1, 10])
-        enc_loss = tf.nn.l2_loss(model["h6"] - ids)
-        """
+        ids[0][7] = 1.0
+        enc_loss = 3.0 * tf.nn.l2_loss(model["h6"] - ids)
+        
 
 
         # total variation denoising
@@ -120,7 +137,7 @@ def stylize(content_img, init_img = None):
 
 
         # overall loss
-        loss = content_loss + style_loss
+        loss = content_loss + style_loss + enc_loss
 
         # optimizer setup
         train_step = tf.train.AdamOptimizer(0.01).minimize(loss)
@@ -134,7 +151,7 @@ def stylize(content_img, init_img = None):
                 best = image.eval()
                 if loss.eval() < 500:
                     break
-                if i % 100 == 0:
+                if i % 50 == 0:
                     print(loss.eval())
                     best = image.eval()
                     _out = best.reshape([64, 64]) * 255.0
